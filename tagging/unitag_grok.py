@@ -1,0 +1,228 @@
+import concurrent.futures as cf
+import concurrent
+import json, os, re, sys, threading, time, warnings
+from collections import deque
+from itertools import cycle
+from pathlib import Path
+from typing import Dict, List, Union
+from tqdm import tqdm
+from jinja2 import Environment, FileSystemLoader
+from openai import OpenAI
+import argparse
+
+# parameters
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+# Please fill in your own API keys
+XAI_API_KEYS = [
+    ""
+]
+
+BASE_URL, MODEL_NAME, REASONING_EFFORT = (
+    "https://api.x.ai/v1",
+    "grok-3-mini-beta",
+    "high",
+)
+MAX_WORKERS = 2000
+MAX_RETRIES, MAX_ATTEMPTS, BASE_DELAY_S = 4, 2, 1  # MAX_RETRIES for API errors only
+REQUEST_SOFT_TIMEOUT = 120
+PROMPT_DIR = "./prompts"
+
+# globals
+env = Environment(loader=FileSystemLoader(PROMPT_DIR))
+key_cycle, key_lock = cycle(XAI_API_KEYS), threading.Lock()
+
+def get_args():
+    parser = argparse.ArgumentParser(description="Unified Tagging Manager with Grok API.")
+    parser.add_argument("--tag_mission", type=str, default="gen_fn_analysis", 
+                       help="The tagging mission.", 
+                       choices=["gen_fn_analysis", "gen_fn_analysis_synthetic"])
+    parser.add_argument("--input_file", type=str, required=True, help="Input dataset file name")
+    parser.add_argument("--checkpoint_every", type=int, default=500, help="Save checkpoint every n batches")
+    parser.add_argument("--debug", action="store_true", help="Debug mode. Only process the first 100 samples.")
+    parser.add_argument("--save_as", type=str, default="json", choices=["json", "jsonl"], 
+                       help="Save the generated responses as a what kind of file")
+    return parser.parse_args()
+
+def template_generator(input, mission):
+    if mission == "gen_fn_analysis":
+        template = env.get_template('gen_fn_analysis.md').render(
+            QUESTION=input['question'], 
+            GROUND_TRUTH_ANSWER=input['ground_truth'], 
+            MODEL_ANSWER=input['extracted_model_output']
+        )
+        return template
+    elif mission == "gen_fn_analysis_synthetic":
+        template = env.get_template('gen_fn_analysis.md').render(
+            QUESTION=input['question'], 
+            GROUND_TRUTH_ANSWER=input['ground_truth'], 
+            MODEL_ANSWER=input['synthetic_answer']
+        )
+        return template
+    else:
+        raise ValueError("Invalid mission. Available missions: gen_fn_analysis, gen_fn_analysis_synthetic")
+
+def process_engine_responses(response, item, mission):
+    if mission in ["gen_fn_analysis", "gen_fn_analysis_synthetic"]:
+        try:
+            # Try to extract just the JSON part using regex
+            json_match = re.search(r'\{.*\}', response, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(0)
+                try:
+                    tags_json = json.loads(json_str)
+                except json.JSONDecodeError:
+                    json_str = re.sub(r'\\([^"\\/bfnrtu]|u(?![0-9a-fA-F]{4}))', r'\\\\\1', json_str)
+                    json_str = re.sub(r'\\$', r'\\\\', json_str)
+                    try:
+                        tags_json = json.loads(json_str)
+                    except json.JSONDecodeError as json_err:
+                        print(f"[unitag_grok.py] JSON decode error: {str(json_err)}")
+                        print(f"[unitag_grok.py] Problematic JSON string: {json_str}")
+                        if '"is_correct": true' in json_str:
+                            item['grok_verifier_reasoning'] = None
+                            item['grok_verifier_is_correct'] = True
+                        else:
+                            item['grok_verifier_reasoning'] = None
+                            item['grok_verifier_is_correct'] = False
+                        return item
+                        
+                if mission in ["gen_fn_analysis", "gen_fn_analysis_synthetic"]:
+                    item['grok_verifier_reasoning'] = tags_json.get("reasoning")
+                    item['grok_verifier_is_correct'] = tags_json.get("is_correct")
+            else:
+                if '"is_correct": true' in response:
+                    item['grok_verifier_reasoning'] = None
+                    item['grok_verifier_is_correct'] = True
+                else:
+                    print(f"[unitag_grok.py] Failed to process item with error: {str(e)}")
+                    item['grok_verifier_reasoning'] = None
+                    item['grok_verifier_is_correct'] = False
+        except Exception as e:
+            print(f"[unitag_grok.py] Failed to process item with error: {str(e)}")
+            print(f"[unitag_grok.py] Raw response from LLM tagger: {response}")
+            if mission in ["gen_fn_analysis", "gen_fn_analysis_synthetic"]:
+                item['grok_verifier_reasoning'] = None
+                item['grok_verifier_is_correct'] = None
+
+    return item
+
+def handle_one(item: Dict, mission: str) -> Union[Dict[str, str], str, None]:
+    delay = BASE_DELAY_S
+    for retry in range(1, MAX_RETRIES + 1):
+        try:
+            with key_lock:
+                api_key = next(key_cycle)
+            client = OpenAI(api_key=api_key, base_url=BASE_URL)
+            
+            with cf.ThreadPoolExecutor(max_workers=1) as exec:
+                fut = exec.submit(
+                    client.chat.completions.create,
+                    model=MODEL_NAME,
+                    reasoning_effort=REASONING_EFFORT,
+                    messages=[
+                        {"role": "user", "content": template_generator(item, mission)}
+                    ],
+                    temperature=0.5,
+                )
+                resp = fut.result(timeout=REQUEST_SOFT_TIMEOUT)
+            
+            return process_engine_responses(resp.choices[0].message.content, item, mission)
+            
+        except concurrent.futures.TimeoutError:
+            tqdm.write(f"[ID {item.get('index', 'unknown')}] API soft timeout, bail item")
+            return "soft_timeout"
+        except Exception as e:
+            tqdm.write(
+                f"[ID {item.get('id', 'unknown')}] API error: {e} (retry {retry}/{MAX_RETRIES})"
+            )
+            if retry == MAX_RETRIES:
+                return None
+            time.sleep(delay)
+            delay *= 2
+    return None
+
+def append_jsonl(path: Path, items: List[Dict]):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a", encoding="utf-8") as f:
+        for obj in items:
+            f.write(json.dumps(obj, ensure_ascii=False) + "\n")
+
+def main():
+    args = get_args()
+    print(f"[unitag_grok.py] Unified Tagging Manager with Grok API. Arguments: {args}")
+
+    inp, out = Path(args.input_file), Path(args.input_file[:args.input_file.rfind('.')] + f"_{args.tag_mission}.{args.save_as}")
+    checkpoint_file = Path(args.input_file[:args.input_file.rfind('.')] + f"_{args.tag_mission}_checkpoint.json")
+
+    # Load dataset
+    if not args.debug:
+        items = json.loads(inp.read_text())
+    else:
+        warnings.warn("Debug mode enabled. Only processing the first 1000 samples.")
+        items = json.loads(inp.read_text())[:1000]
+
+    # Load checkpoint if exists
+    if checkpoint_file.exists():
+        done_items = json.loads(checkpoint_file.read_text())
+        done_ids = {item.get('index', str(i)) for i, item in enumerate(done_items)}
+        pend = deque([obj for obj in items if obj.get('index', str(i)) not in done_ids])
+        print(f"[unitag_grok.py] Checkpoint file found. Resuming from last checkpoint with {len(done_items)} items processed.")
+    else:
+        pend = deque(items)
+        done_items = []
+
+    total = len(pend)
+    overall = tqdm(total=total, desc="Overall", ncols=80)
+
+    with cf.ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+        running = {}
+        while pend and len(running) < MAX_WORKERS:
+            it = pend.popleft()
+            fut = pool.submit(handle_one, it, args.tag_mission)
+            running[fut] = it
+
+        while running:
+            done, _ = cf.wait(running, return_when=cf.FIRST_COMPLETED)
+            for fut in done:
+                item = running.pop(fut)
+                try:
+                    result = fut.result()
+                    if isinstance(result, dict):
+                        done_items.append(result)
+                        if len(done_items) % args.checkpoint_every == 0:
+                            checkpoint_file.write_text(json.dumps(done_items, ensure_ascii=False, indent=2))
+                            print(f"[unitag_grok.py] Checkpoint saved after processing {len(done_items)} items")
+                        overall.update(1)
+                    elif result == "soft_timeout":
+                        tqdm.write(f"[ID {item.get('index', 'unknown')}] soft timeout, skipping item")
+                        overall.update(1)
+                    else:
+                        tqdm.write(f"[ID {item.get('index', 'unknown')}] failed, retrying")
+                        pend.append(item)
+                except Exception as e:
+                    tqdm.write(f"[ID {item.get('index', 'unknown')}] fatal error: {e}")
+                    pend.append(item)
+
+                if pend:
+                    nxt = pend.popleft()
+                    fut2 = pool.submit(handle_one, nxt, args.tag_mission)
+                    running[fut2] = nxt
+
+    overall.close()
+    
+    # Save final results
+    if args.save_as == "json":
+        out.write_text(json.dumps(done_items, ensure_ascii=False, indent=2))
+    else:
+        append_jsonl(out, done_items)
+    
+    # Remove checkpoint file
+    if checkpoint_file.exists():
+        checkpoint_file.unlink()
+        print("[unitag_grok.py] Final dataset saved. Checkpoint removed.")
+    
+    print("\nAll done.")
+
+if __name__ == "__main__":
+    main()
