@@ -1,5 +1,5 @@
 set -x
-cd LLaMA-Factory
+cd llama_factory
 
 BASE_MODEL=${1:-"Qwen/Qwen2.5-1.5B-Instruct"}
 DATASET=${2:-"zhangchenxu/TinyV_Training_Data_Balanced"}

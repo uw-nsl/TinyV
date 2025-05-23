@@ -43,7 +43,7 @@ def _default_compute_score(data_source, solution_str, ground_truth, extra_info=N
     ## TinyV
     elif '_tinyv' in data_source or 'HardVerify-Math' in data_source:
         from . import tinyv
-        res = tinyv.compute_score(solution_str, ground_truth, extra_info, llm_verifier_setup)
+        res = tinyv.compute_score(solution_str, ground_truth, extra_info, tinyv_setup)
     elif '_prime' in data_source:
         from . import prime_math
         res = prime_math.compute_score(solution_str, ground_truth)

@@ -83,13 +83,13 @@ vllm serve $VERIFIER_MODEL \
         --port 8000 \
         --host 0.0.0.0 \
         --max-model-len 4096 \
-        --gpu-memory-utilization 0.15 2>&1 | tee vllm_output.log &
+        --gpu-memory-utilization 0.15 2>&1 | tee tinyv_vllm_output.log &
 VLLM_PID=$!
 echo -e "${BLUE}[LLM Verifier] VLLM server initialized with PID: $VLLM_PID ${NC}"
 
 # Wait for the vllm server to start up
 echo -e "${BLUE}[LLM Verifier] Waiting for VLLM server to be ready...${NC}"
-MAX_RETRIES=30
+MAX_RETRIES=50
 RETRY_COUNT=0
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
     if curl -s http://localhost:8000/v1/models > /dev/null; then
@@ -117,7 +117,7 @@ python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
     algorithm.use_kl_in_reward=$USE_KL_IN_REWARD \
     data.train_files=./data/$DATASET/train.parquet \
-    data.val_files="['./data/math_eval/math_benchmarks_aammo.parquet']" \
+    data.val_files="['./data/math_eval/math_benchmarks_aammo.parquet', './data/hardverify_math/test.parquet']" \
     data.train_batch_size=$ROLLOUT_BATCH_SIZE \
     data.max_prompt_length=$MAX_PROMPT_LEN \
     data.max_response_length=$MAX_RESPONSE_LEN \
