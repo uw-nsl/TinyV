@@ -26,7 +26,7 @@ trap cleanup EXIT INT TERM
 BASE_MODEL=${1:-"Qwen/Qwen2.5-7B"}
 MAX_EPOCHS=${2:-"12"}
 DATASET=${3:-"bigmath_rl_tinyv"}
-NEKL=${4:-"False"}
+NO_ENTROPY_LOSS_AND_KL=${4:-"False"}
 VERIFIER_MODEL=${5:-"zhangchenxu/TinyV-1.5B"}
 VERIFIER_SETUP=${6:-"addon"}
 
@@ -45,7 +45,7 @@ else
     RUN_NAME=${MODEL_NICKNAME}-${DATASET}-3
 fi
 
-if [ "$NEKL" == "True" ]; then
+if [ "$NO_ENTROPY_LOSS_AND_KL" == "True" ]; then
     RUN_NAME=${RUN_NAME}-NEKL
     USE_KL_LOSS=FALSE
     USE_KL_IN_REWARD=FALSE
