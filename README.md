@@ -48,6 +48,7 @@ VERIFIER_SETUP=${6:-"addon"}
 Configuration Options:
 
 `VERIFIER_MODEL`: Specifies the TinyV model to use for verification. Default is `zhangchenxu/TinyV-1.5B`, but you can replace it with other TinyV model variants or your own fine-tuned verifier.
+
 `VERIFIER_SETUP`: Defines how TinyV integrates with the training process. Options include:
 - `addon` (default): TinyV works alongside existing rule-based verifiers. TinyV is triggered only when the rule-based verifier determines the answer is incorrect.
 - `tinyv_only`: Uses TinyV exclusively for verification, without using rule-based verifiers entirely.
