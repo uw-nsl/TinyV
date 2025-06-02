@@ -1,5 +1,5 @@
 #!/bin/bash
-# The config is optimized for 8xA100 (Singularity)
+# The config is optimized for 8xA100
 set -x
 cd ./verl
 
@@ -143,7 +143,7 @@ python3 -m verl.trainer.main_ppo \
     algorithm.kl_ctrl.kl_coef=0.001 \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
-    trainer.project_name='TinyV-0429' \
+    trainer.project_name='TinyV-Test' \
     trainer.experiment_name=${RUN_NAME} \
     trainer.nnodes=1 \
     trainer.default_local_dir=$SAVED_DIR \
