@@ -22,7 +22,7 @@ from verl import DataProto
 from verl.utils.reward_score import _default_compute_score
 
 
-async def single_compute_score(evaluation_func, completion, reference, task, task_extra_info, executor, timeout=300., tinyv_setup=None):
+async def single_compute_score(evaluation_func, completion, reference, task, task_extra_info, executor, timeout=300., tinyv_setup=None, tinyv_weight=None):
     loop = asyncio.get_running_loop()
     try:
         # Ensure process_completion is called properly
@@ -30,7 +30,7 @@ async def single_compute_score(evaluation_func, completion, reference, task, tas
             asyncio.wait_for(
                 loop.run_in_executor(
                     executor,
-                    partial(evaluation_func, task, completion, reference, task_extra_info, tinyv_setup)  # Ensure synchronous
+                    partial(evaluation_func, task, completion, reference, task_extra_info, tinyv_setup, tinyv_weight)  # Ensure synchronous
                 ),
                 timeout=timeout)
         ]
@@ -48,6 +48,7 @@ async def parallel_compute_score_async(evaluation_func,
                                        references,
                                        tasks,
                                        tinyv_setup,
+                                       tinyv_weight,
                                        extra_info=None,
                                        num_processes=64):
     scores = []
@@ -56,7 +57,7 @@ async def parallel_compute_score_async(evaluation_func,
             extra_info = [None] * len(tasks)
         # Create tasks for all rows
         tasks_async = [
-            single_compute_score(evaluation_func, completion, reference, task, task_extra_info, executor, timeout=300., tinyv_setup=tinyv_setup)
+            single_compute_score(evaluation_func, completion, reference, task, task_extra_info, executor, timeout=300., tinyv_setup=tinyv_setup, tinyv_weight=tinyv_weight)
             for completion, reference, task, task_extra_info in zip(completions, references, tasks, extra_info)
         ]
         # to prevent very occasional starvation caused by some anomalous programs ( like infinite loop ), the exceptions in async programs will instantly halt the evaluation, and all summoned processes will be killed.
@@ -87,11 +88,12 @@ class PrimeRewardManager:
     The Reward Manager used in https://github.com/PRIME-RL/PRIME
     """
 
-    def __init__(self, tokenizer, num_examine, compute_score=None, tinyv_setup=None) -> None:
+    def __init__(self, tokenizer, num_examine, compute_score=None, tinyv_setup=None, tinyv_weight=None) -> None:
         self.tokenizer = tokenizer
         self.num_examine = num_examine  # the number of batches of decoded responses to print to the console
         self.compute_score = compute_score or _default_compute_score
         self.tinyv_setup = tinyv_setup
+        self.tinyv_weight = tinyv_weight
 
     def verify(self, data):
         """
@@ -114,6 +116,7 @@ class PrimeRewardManager:
                                              ground_truth,
                                              data_sources,
                                              self.tinyv_setup,
+                                             self.tinyv_weight,
                                              extra_info=extra_info,
                                              num_processes=64))
         except asyncio.TimeoutError as e:

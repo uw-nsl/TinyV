@@ -77,9 +77,11 @@ except Exception as e:
     raise Exception(f"Verifier LLM is not running. Please run the verifier first.")
 
 def model_infer(msg, model, retry=3, temperature=0):
+    # TinyV with Reasoning
     if "think" in model.lower():
         max_completion_tokens = 2048
-    else: # Non-think verifiers
+    # TinyV without Reasoning
+    else:
         max_completion_tokens = 2
     try:
         resp = client.chat.completions.create(
@@ -128,43 +130,47 @@ def tinyv_score(question_str:str, ground_truth:str, model_answer:str, debug=Fals
     return tinyv_score
 
 
-def _compute_score(solution_str:str, ground_truth:str, question_str:str, llm_verifier_setup=None, debug=False):
+def _compute_score(solution_str:str, ground_truth:str, question_str:str, tinyv_setup=None, tinyv_weight=None, debug=False):
     prime_is_correct, prime_format_correctness, answer = prime_math.compute_score(solution_str, ground_truth)
 
     # Zhangchen: We don't consider format reward for now for consistency with prime
-
-    if llm_verifier_setup == 'addon':
+    if tinyv_setup == 'addon':
         if prime_is_correct == False:
-            tinyv_reward = tinyv_score(question_str, ground_truth, answer)
+            tinyv_reward = tinyv_score(question_str, ground_truth, answer) * tinyv_weight
         else:
             tinyv_reward = 1
-    elif llm_verifier_setup == 'tinyv_only':
+        score = tinyv_reward
+    elif tinyv_setup == 'tinyv_only':
         tinyv_reward = tinyv_score(question_str, ground_truth, answer)
+        score = tinyv_reward
+    elif tinyv_setup == 'mixed':
+        tinyv_reward = tinyv_score(question_str, ground_truth, answer)
+        score = tinyv_reward * tinyv_weight + prime_is_correct * (1 - tinyv_weight)
     else:
-        raise ValueError(f"Invalid llm_verifier_setup: {llm_verifier_setup}")
+        raise ValueError(f"Invalid tinyv_setup: {tinyv_setup}")
 
     if debug:
         print(f"Question: {question_str}")
-        print(f"LLM Verifier Setup:      : {llm_verifier_setup}")
+        print(f"TinyV Setup:             : {tinyv_setup}")
         print(f"Prime Correctness        : {prime_is_correct}")
         print(f"Prime Format Correctness : {prime_format_correctness}")
         print(f"Model Answer             : {answer}")
         print(f"Ground Truth Answer      : {ground_truth}")
-        print(f"Assigned tinyv Reward       : {tinyv_reward}")
+        print(f"Assigned tinyv Reward    : {tinyv_reward}")
+        print(f"Assigned score           : {score}")
         print("-"*80)
 
-    return tinyv_reward
+    return score
 
 
-def compute_score(solution_str, ground_truth, extra_info=None, llm_verifier_setup=None, format_reward_max=0., tinyv_reward_max=1.):
+def compute_score(solution_str, ground_truth, extra_info=None, tinyv_setup=None, tinyv_weight=None, format_reward_max=0., tinyv_reward_max=1.):
     question_str = extra_info['question']
 
     # format_reward, tinyv_reward = _compute_score(solution_str, ground_truth, question_str)
     # score = format_reward + tinyv_reward
     # marker = "✅" if score == (format_reward_max + tinyv_reward_max) else "❌"
 
-    tinyv_reward = _compute_score(solution_str, ground_truth, question_str, llm_verifier_setup)
-    score = tinyv_reward
+    score = _compute_score(solution_str, ground_truth, question_str, tinyv_setup, tinyv_weight)
     marker = "✅" if score == tinyv_reward_max else "❌"
     print(f"Reward: {score}. {marker}")
 

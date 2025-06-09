@@ -162,6 +162,7 @@ reward_model:
   forward_max_token_len_per_gpu: ${critic.forward_max_token_len_per_gpu}
   reward_manager: prime
   tinyv_setup: addon
+  tinyv_weight: 1.0
 
 custom_reward_function:
   path: null

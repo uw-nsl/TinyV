@@ -29,6 +29,7 @@ DATASET=${3:-"bigmath_rl_tinyv"}
 NO_ENTROPY_LOSS_AND_KL=${4:-"False"}
 VERIFIER_MODEL=${5:-"zhangchenxu/TinyV-1.5B"}
 VERIFIER_SETUP=${6:-"addon"}
+VERIFIER_WEIGHT=${7:-"1.0"}
 
 # MAIN CONFIG
 MODEL_PATH=$BASE_MODEL
@@ -143,7 +144,7 @@ python3 -m verl.trainer.main_ppo \
     algorithm.kl_ctrl.kl_coef=0.001 \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
-    trainer.project_name='TinyV-Test' \
+    trainer.project_name='TinyV-0429' \
     trainer.experiment_name=${RUN_NAME} \
     trainer.nnodes=1 \
     trainer.default_local_dir=$SAVED_DIR \
@@ -153,4 +154,5 @@ python3 -m verl.trainer.main_ppo \
     trainer.resume_mode=auto \
     trainer.total_epochs=$MAX_EPOCHS \
     reward_model.reward_manager=prime \
-    reward_model.tinyv_setup=$VERIFIER_SETUP 2>&1 | tee ${RUN_NAME}.log
+    reward_model.tinyv_setup=$VERIFIER_SETUP \
+    reward_model.tinyv_weight=$VERIFIER_WEIGHT 2>&1 | tee ${RUN_NAME}.log
