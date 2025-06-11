@@ -39,7 +39,7 @@ install_requires = [
   'transformers',
   'wandb',
   'mathruler',
-  'vllm==0.8.2',
+  'vllm==0.8.5',
 ]
 
 TEST_REQUIRES = ['pytest', 'yapf', 'py-spy']
