@@ -157,10 +157,10 @@ class TaskRunner:
             raise NotImplementedError
 
         compute_score = get_custom_reward_fn(config)
-        reward_fn = reward_manager_cls(tokenizer=tokenizer, num_examine=0, compute_score=compute_score, tinyv_setup=config.reward_model.tinyv_setup)
+        reward_fn = reward_manager_cls(tokenizer=tokenizer, num_examine=0, compute_score=compute_score, tinyv_setup=config.reward_model.tinyv_setup, tinyv_weight=config.reward_model.tinyv_weight)
 
         # Note that we always use function-based RM for validation
-        val_reward_fn = reward_manager_cls(tokenizer=tokenizer, num_examine=1, compute_score=compute_score, tinyv_setup=config.reward_model.tinyv_setup)
+        val_reward_fn = reward_manager_cls(tokenizer=tokenizer, num_examine=1, compute_score=compute_score, tinyv_setup=config.reward_model.tinyv_setup, tinyv_weight=1)
 
         resource_pool_manager = ResourcePoolManager(resource_pool_spec=resource_pool_spec, mapping=mapping)
 
