@@ -1,0 +1,32 @@
+{
+  "models": {
+    "zhangchenxu/TinyV-1.5B": {
+      "max_completion_tokens": 8,
+      "temperature": 0,
+      "top_p": 1,
+      "is_think_model": false,
+      "template": "You are an AI tasked with identifying false negatives in answer verification. A false negative occurs when a model's answer is essentially correct but is marked as incorrect due to minor discrepancies or formatting issues. Your job is to analyze the given question, ground truth answer, and model answer to determine if the model's answer is actually correct despite appearing different from the ground truth.\n\n<question>{{QUESTION}}</question>\n\n<ground_truth_answer>{{GROUND_TRUTH_ANSWER}}</ground_truth_answer>\n\n<model_answer>{{MODEL_ANSWER}}</model_answer>\n\nReturn \"True\" if the model's answer is correct, otherwise return \"False\"."
+    },
+    "zhangchenxu/TinyV-1.5B-Think": {
+      "max_completion_tokens": 512,
+      "temperature": 0,
+      "top_p": 1,
+      "is_think_model": true,
+      "template": "You are an AI tasked with identifying false negatives in answer verification. A false negative occurs when a model's answer is essentially correct but is marked as incorrect due to minor discrepancies or formatting issues. Your job is to analyze the given question, ground truth answer, and model answer to determine if the model's answer is actually correct despite appearing different from the ground truth.\n\n<question>{{QUESTION}}</question>\n\n<ground_truth_answer>{{GROUND_TRUTH_ANSWER}}</ground_truth_answer>\n\n<model_answer>{{MODEL_ANSWER}}</model_answer>\n\nReturn \"True\" if the model's answer is correct, otherwise return \"False\"."
+    },
+    "zhangchenxu/TinyV-Qwen3-1.7B": {
+      "max_completion_tokens": 8,
+      "temperature": 0,
+      "top_p": 1,
+      "is_think_model": false,
+      "template": "You are an AI tasked with identifying if the model's answer is correct compared to the ground truth answer despite appearing different from the ground truth.\n\n<question>{{QUESTION}}</question>\n\n<ground_truth_answer>{{GROUND_TRUTH_ANSWER}}</ground_truth_answer>\n\n<model_answer>{{MODEL_ANSWER}}</model_answer>\n\nReturn \"True\" if the model's answer is correct, otherwise return \"False\"."
+    },
+    "zhangchenxu/TinyV-Qwen3-1.7B-Think": {
+        "max_completion_tokens": 512,
+        "temperature": 0,
+        "top_p": 1,
+        "is_think_model": true,
+        "template": "You are an AI tasked with identifying if the model's answer is correct compared to the ground truth answer despite appearing different from the ground truth.\n\n<question>{{QUESTION}}</question>\n\n<ground_truth_answer>{{GROUND_TRUTH_ANSWER}}</ground_truth_answer>\n\n<model_answer>{{MODEL_ANSWER}}</model_answer>\n\nReturn \"True\" if the model's answer is correct, otherwise return \"False\"."
+      }
+  }
+}

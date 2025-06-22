@@ -8,19 +8,6 @@ from openai import OpenAI
 import requests
 import json
 
-TINYV_PROMPT = """
-You are an AI tasked with identifying false negatives in answer verification. A false negative occurs when a model's answer is essentially correct but is marked as incorrect due to minor discrepancies or formatting issues. Your job is to analyze the given question, ground truth answer, and model answer to determine if the model's answer is actually correct despite appearing different from the ground truth.
-
-<question>{{QUESTION}}</question>
-
-<ground_truth_answer>{{GROUND_TRUTH_ANSWER}}</ground_truth_answer>
-
-<model_answer>{{MODEL_ANSWER}}</model_answer>
-
-Return "True" if the model's answer is correct, otherwise return "False".
-"""
-
-
 def last_boxed_only_string(string: str) -> Optional[str]:
     """Extract the last LaTeX boxed expression from a string.
     
@@ -67,43 +54,57 @@ def format_score(solution_str, good_score=0., bad_score=-1.):
     return score, cot, answer
 
 
+# get the tinyv config for the given model
+def get_tinyv_config(model_name: str):
+    with open('tinyv_config.json', 'r') as f:
+        tinyv_config_all = json.load(f)
+
+    if model_name not in tinyv_config_all:
+        raise KeyError(f"Model '{model_name}' not found in tinyv_config. Available models: {list(tinyv_config_all.keys())}")
+    return tinyv_config_all[model_name]
+
+
 client = OpenAI(api_key='token-abc123', base_url='http://localhost:8000/v1')
 # get the model name from the response
 response = requests.get('http://localhost:8000/v1/models')
 try:
     models_data = response.json()
     VERIFIER_MODEL_NAME = models_data['data'][0]['id']
+    VERIFIER_MODEL_CONFIG = get_tinyv_config(VERIFIER_MODEL_NAME)
+    TINYV_PROMPT = VERIFIER_MODEL_CONFIG['template']
+    MAX_COMPLETION_TOKENS = VERIFIER_MODEL_CONFIG['max_completion_tokens']
+    TEMPERATURE = VERIFIER_MODEL_CONFIG['temperature']
+    TOP_P = VERIFIER_MODEL_CONFIG['top_p']
+    IS_THINK_MODEL = VERIFIER_MODEL_CONFIG['is_think_model']
 except Exception as e:
     raise Exception(f"Verifier LLM is not running. Please run the verifier first.")
 
-def model_infer(msg, model, retry=3, temperature=0):
-    # TinyV with Reasoning
-    if "think" in model.lower():
-        max_completion_tokens = 2048
-    # TinyV without Reasoning
-    else:
-        max_completion_tokens = 2
+
+def model_infer(msg, model, retry=3, temperature=0, top_p=1):
     try:
         resp = client.chat.completions.create(
             model=model,
             messages=msg,
             temperature=temperature,
-            max_completion_tokens=max_completion_tokens
+            top_p=top_p,
+            max_completion_tokens=MAX_COMPLETION_TOKENS
         )
         parsed_resp = resp.choices[0].message.content.strip()
 
         # For think verifiers, only consider the answer part
-        if "think" in model.lower():
-            if "Answer:" in parsed_resp:
+        if IS_THINK_MODEL:
+            if "Answer:" in parsed_resp: # Qwen2.5
                 parsed_resp = parsed_resp.split("Answer:")[1].strip()
+            elif "</think>" in parsed_resp: # Qwen3
+                parsed_resp = parsed_resp.split("</think>")[1].strip()
             else:
                 print(f"Invalid response: {parsed_resp}")
                 score = 0
                 return score
         
-        if 'True' in parsed_resp:
+        if 'true' in parsed_resp.lower():
             score = 1 
-        elif 'False' in parsed_resp:
+        elif 'false' in parsed_resp.lower():
             score = 0
         else:
             print(f"Invalid response: {parsed_resp}")
@@ -113,7 +114,8 @@ def model_infer(msg, model, retry=3, temperature=0):
     except Exception as e:
         print(f"LLM Verifier InferenceError: {e}")
         if retry > 0:
-            return model_infer(msg, model, retry=retry-1, temperature=0.7)
+            # In case the model is not working, we try again with a higher temperature
+            return model_infer(msg, model, retry=retry-1, temperature=TEMPERATURE+0.3, top_p=1)
         else:
             return 0
 
@@ -125,7 +127,7 @@ def tinyv_score(question_str:str, ground_truth:str, model_answer:str, debug=Fals
     if debug:
         print(f"TinyV Prompt: {msg}")
     
-    tinyv_score = model_infer(msg, VERIFIER_MODEL_NAME, retry=3, temperature=0)
+    tinyv_score = model_infer(msg, VERIFIER_MODEL_NAME, retry=3, temperature=TEMPERATURE, top_p=TOP_P)
 
     return tinyv_score
 
