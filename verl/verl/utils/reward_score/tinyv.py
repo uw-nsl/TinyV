@@ -56,7 +56,7 @@ def format_score(solution_str, good_score=0., bad_score=-1.):
 
 # get the tinyv config for the given model
 def get_tinyv_config(model_name: str):
-    with open('tinyv_config.json', 'r') as f:
+    with open('./verl/utils/reward_score/tinyv_config.json', 'r') as f:
         tinyv_config_all = json.load(f)
 
     if model_name not in tinyv_config_all:
